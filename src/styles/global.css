@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap');
 
 :root {
   color-scheme: dark;
@@ -141,7 +141,7 @@ input { min-width: 0; flex: 1; border: 0; padding: 0.8rem 0; color: var(--ink); 
 .reader-header p { margin: 0; color: var(--gold); font-size: 0.61rem; letter-spacing: 0.19em; text-align: right; text-transform: uppercase; }
 .chapter-count { margin: 5rem 0 1rem; }
 .reader > h2 { max-width: 13ch; margin-bottom: 3rem; }
-.chapter-body { font: 400 clamp(1.18rem, 2.5vw, 1.34rem)/1.85 'Cormorant Garamond', Georgia, serif; }
+.chapter-body { font: 400 clamp(1.18rem, 2.5vw, 1.34rem)/1.85 Literata, Georgia, serif; }
 .chapter-body h1 { margin: 0 0 2.5rem; font-size: 2rem; line-height: 1.1; letter-spacing: -0.02em; }
 .chapter-body p { margin: 0 0 1.35em; }
 .chapter-body p:first-of-type::first-letter { float: left; padding: 0.08em 0.1em 0 0; color: var(--gold); font-size: 4.2em; line-height: 0.72; }
