@@ -79,8 +79,10 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         </section>
 
         <article class="reader" id="reader" aria-labelledby="chapter-title" hidden>
+          <div class="reader-floating-controls">
+            <button class="back-button floating-back-button" id="show-chapters" type="button">← Chapter list</button>
+          </div>
           <header class="reader-header">
-            <button class="back-button" id="show-chapters" type="button">← Chapter list</button>
             <p id="reader-book-title"></p>
           </header>
           <p class="chapter-count" id="chapter-count"></p>
@@ -455,7 +457,8 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
             button.append(marker);
           }
           button.addEventListener('click', () => showChapter(index, chapterIndex));
-          chapterList.append(button);
+          // Reverse only the visible list; retain original indexes for navigation and memory.
+          chapterList.prepend(button);
         });
         showOnly(bookDetail);
       }
