@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { marked } from 'marked';
+import { validateKoreanTranslation } from './bilingual-content.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sourceDir = join(root, 'private-content');
@@ -96,9 +97,11 @@ async function loadBook(directoryName) {
     const chapter = parseChapter(await readFile(join(directory, fileName), 'utf8'), fileName);
     const commentsPath = join(directory, `${basename(fileName, '.md')}.comments.json`);
     const reactions = await readOptionalJson(commentsPath, null);
+    const korean = await readOptionalJson(join(directory, `${basename(fileName, '.md')}.ko.json`), null);
     return {
       ...chapter,
       reactions: reactions ? validateReactions(reactions, readerIds, commentsPath) : null,
+      ...(korean ? { korean: validateKoreanTranslation(korean, chapter.html) } : {}),
     };
   }));
 
