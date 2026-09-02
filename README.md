@@ -2,6 +2,8 @@
 
 A password-unlocked, static Astro reading room for GitHub Pages.
 
+Published at: <https://yuliyulidaz.github.io/lalanote/>
+
 ## First local test
 
 ```powershell
@@ -21,4 +23,3 @@ Put Markdown files in `private-content/`, using names such as `chapter-01.md`, `
 ## Important security boundary
 
 The deployed site contains ciphertext, not plaintext or the password. This prevents casual reading through page source or developer tools. It is still a static client-side system: anyone who knows the password can decrypt and copy the text, and a weak password can be guessed offline. Use a long, unique password.
-
