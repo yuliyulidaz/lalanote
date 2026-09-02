@@ -1,0 +1,143 @@
+---
+import '../styles/global.css';
+
+const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content="A private reading room for The Girl in the Library." />
+    <title>The Girl in the Library</title>
+  </head>
+  <body data-library-url={libraryUrl}>
+    <div class="grain" aria-hidden="true"></div>
+    <main>
+      <section class="gate" id="gate" aria-labelledby="site-title">
+        <p class="eyebrow">A PRIVATE READING ROOM</p>
+        <h1 id="site-title">The Girl<br />in the Library</h1>
+        <div class="rule"><span>✦</span></div>
+        <p class="invitation">This story is kept behind a locked door.</p>
+
+        <form id="unlock-form">
+          <label for="password">Reading key</label>
+          <div class="field-row">
+            <input id="password" name="password" type="password" autocomplete="current-password" required autofocus />
+            <button type="submit">Enter</button>
+          </div>
+          <p class="status" id="status" role="alert" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <article class="reader" id="reader" hidden>
+        <header>
+          <button class="quiet-button" id="lock-button" type="button">Lock library</button>
+          <p class="eyebrow" id="book-title"></p>
+        </header>
+        <div class="chapter-count" id="chapter-count"></div>
+        <h2 id="chapter-title"></h2>
+        <div class="chapter-body" id="chapter-body"></div>
+        <nav aria-label="Chapter navigation">
+          <button class="nav-button" id="previous" type="button">← Previous</button>
+          <button class="nav-button" id="next" type="button">Next →</button>
+        </nav>
+      </article>
+    </main>
+
+    <script>
+      type Chapter = { title: string; html: string };
+      type Library = { title: string; chapters: Chapter[] };
+      type Payload = {
+        kdf: { iterations: number; salt: string };
+        cipher: { iv: string; tagLength: number };
+        data: string;
+      };
+
+      const gate = document.querySelector<HTMLElement>('#gate')!;
+      const reader = document.querySelector<HTMLElement>('#reader')!;
+      const form = document.querySelector<HTMLFormElement>('#unlock-form')!;
+      const passwordInput = document.querySelector<HTMLInputElement>('#password')!;
+      const status = document.querySelector<HTMLElement>('#status')!;
+      const chapterTitle = document.querySelector<HTMLElement>('#chapter-title')!;
+      const chapterBody = document.querySelector<HTMLElement>('#chapter-body')!;
+      const chapterCount = document.querySelector<HTMLElement>('#chapter-count')!;
+      const bookTitle = document.querySelector<HTMLElement>('#book-title')!;
+      const previous = document.querySelector<HTMLButtonElement>('#previous')!;
+      const next = document.querySelector<HTMLButtonElement>('#next')!;
+      let library: Library | null = null;
+      let currentChapter = 0;
+
+      const fromBase64 = (value: string) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+
+      async function decrypt(payload: Payload, password: string): Promise<Library> {
+        const material = await crypto.subtle.importKey(
+          'raw',
+          new TextEncoder().encode(password),
+          'PBKDF2',
+          false,
+          ['deriveKey'],
+        );
+        const key = await crypto.subtle.deriveKey(
+          { name: 'PBKDF2', hash: 'SHA-256', salt: fromBase64(payload.kdf.salt), iterations: payload.kdf.iterations },
+          material,
+          { name: 'AES-GCM', length: 256 },
+          false,
+          ['decrypt'],
+        );
+        const plaintext = await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: fromBase64(payload.cipher.iv), tagLength: payload.cipher.tagLength },
+          key,
+          fromBase64(payload.data),
+        );
+        return JSON.parse(new TextDecoder().decode(plaintext));
+      }
+
+      function showChapter(index: number) {
+        if (!library) return;
+        currentChapter = index;
+        const chapter = library.chapters[index];
+        chapterCount.textContent = `CHAPTER ${index + 1} OF ${library.chapters.length}`;
+        chapterTitle.textContent = chapter.title;
+        chapterBody.innerHTML = chapter.html;
+        previous.disabled = index === 0;
+        next.disabled = index === library.chapters.length - 1;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        status.textContent = 'Opening the door…';
+        form.querySelector('button')!.setAttribute('disabled', '');
+        try {
+          const response = await fetch(document.body.dataset.libraryUrl!);
+          if (!response.ok) throw new Error('Library data is unavailable.');
+          library = await decrypt(await response.json(), passwordInput.value);
+          passwordInput.value = '';
+          bookTitle.textContent = library.title;
+          gate.hidden = true;
+          reader.hidden = false;
+          showChapter(0);
+        } catch {
+          status.textContent = 'That key does not open this door.';
+          passwordInput.select();
+        } finally {
+          form.querySelector('button')!.removeAttribute('disabled');
+        }
+      });
+
+      previous.addEventListener('click', () => showChapter(currentChapter - 1));
+      next.addEventListener('click', () => showChapter(currentChapter + 1));
+      document.querySelector('#lock-button')!.addEventListener('click', () => {
+        library = null;
+        chapterBody.replaceChildren();
+        reader.hidden = true;
+        gate.hidden = false;
+        status.textContent = '';
+        passwordInput.focus();
+      });
+    </script>
+  </body>
+</html>
+
