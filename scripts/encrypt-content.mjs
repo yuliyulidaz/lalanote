@@ -23,6 +23,30 @@ function parseChapter(markdown, fileName) {
   return { title, html: marked.parse(body) };
 }
 
+async function readOptionalJson(filePath, fallback) {
+  try {
+    return JSON.parse(await readFile(filePath, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return fallback;
+    throw error;
+  }
+}
+
+function validateReactions(reactions, readerIds, filePath) {
+  if (!reactions || !Array.isArray(reactions.comments)) {
+    throw new Error(`Comments file must contain a comments array: ${filePath}`);
+  }
+
+  const visit = (comments) => comments.forEach((comment) => {
+    if (!readerIds.has(comment.readerId)) {
+      throw new Error(`Unknown reader "${comment.readerId}" in ${filePath}`);
+    }
+    visit(comment.replies || []);
+  });
+  visit(reactions.comments);
+  return reactions;
+}
+
 async function readHidden(prompt) {
   if (!process.stdin.isTTY) {
     throw new Error('Run this command in a terminal, or set LIBRARY_PASSWORD for automated use.');
@@ -60,15 +84,23 @@ async function readHidden(prompt) {
 async function loadBook(directoryName) {
   const directory = join(sourceDir, directoryName);
   const metadata = JSON.parse(await readFile(join(directory, 'book.json'), 'utf8'));
+  const readers = await readOptionalJson(join(directory, 'readers.json'), []);
+  const readerIds = new Set(readers.map((reader) => reader.id));
   const chapterFiles = (await readdir(directory))
     .filter((name) => name.toLowerCase().endsWith('.md'))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   if (!chapterFiles.length) throw new Error(`No Markdown chapters found in ${directory}`);
 
-  const chapters = await Promise.all(
-    chapterFiles.map(async (fileName) => parseChapter(await readFile(join(directory, fileName), 'utf8'), fileName)),
-  );
+  const chapters = await Promise.all(chapterFiles.map(async (fileName) => {
+    const chapter = parseChapter(await readFile(join(directory, fileName), 'utf8'), fileName);
+    const commentsPath = join(directory, `${basename(fileName, '.md')}.comments.json`);
+    const reactions = await readOptionalJson(commentsPath, null);
+    return {
+      ...chapter,
+      reactions: reactions ? validateReactions(reactions, readerIds, commentsPath) : null,
+    };
+  }));
 
   return {
     id: metadata.id || directoryName,
@@ -77,6 +109,7 @@ async function loadBook(directoryName) {
     description: metadata.description || '',
     color: metadata.color || '#243b2b',
     symbol: metadata.symbol || '✦',
+    readers,
     chapters,
   };
 }
