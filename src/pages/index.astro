@@ -304,9 +304,13 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         status.textContent = 'Opening the door…';
         form.querySelector('button')!.setAttribute('disabled', '');
         try {
-          const response = await fetch(document.body.dataset.libraryUrl!);
+          const dataUrl = new URL(document.body.dataset.libraryUrl!, window.location.href);
+          dataUrl.searchParams.set('fresh', Date.now().toString());
+          const response = await fetch(dataUrl, { cache: 'no-store' });
           if (!response.ok) throw new Error('Library data is unavailable.');
-          library = await decrypt(await response.json(), passwordInput.value);
+          const decrypted = await decrypt(await response.json(), passwordInput.value);
+          if (!Array.isArray(decrypted.books)) throw new Error('Library data is outdated.');
+          library = decrypted;
           passwordInput.value = '';
           gate.hidden = true;
           shell.hidden = false;
