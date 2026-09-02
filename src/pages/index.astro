@@ -9,7 +9,7 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
-    <meta name="description" content="A private reading room for The Girl in the Library." />
+    <meta name="description" content="A private collection of English stories." />
     <title>The Girl in the Library</title>
   </head>
   <body data-library-url={libraryUrl}>
@@ -19,7 +19,7 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         <p class="eyebrow">A PRIVATE READING ROOM</p>
         <h1 id="site-title">The Girl<br />in the Library</h1>
         <div class="rule"><span>✦</span></div>
-        <p class="invitation">This story is kept behind a locked door.</p>
+        <p class="invitation">The collection is kept behind a locked door.</p>
 
         <form id="unlock-form">
           <label for="password">Reading key</label>
@@ -31,45 +31,140 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         </form>
       </section>
 
-      <article class="reader" id="reader" hidden>
-        <header>
-          <button class="quiet-button" id="lock-button" type="button">Lock library</button>
-          <p class="eyebrow" id="book-title"></p>
+      <div class="library-shell" id="library-shell" hidden>
+        <header class="masthead">
+          <button class="wordmark" type="button" data-show-library>The Girl in the Library</button>
+          <nav class="top-nav" aria-label="Library navigation">
+            <button type="button" data-show-library>Library</button>
+            <button type="button" id="lock-button">Lock</button>
+          </nav>
         </header>
-        <div class="chapter-count" id="chapter-count"></div>
-        <h2 id="chapter-title"></h2>
-        <div class="chapter-body" id="chapter-body"></div>
-        <nav aria-label="Chapter navigation">
-          <button class="nav-button" id="previous" type="button">← Previous</button>
-          <button class="nav-button" id="next" type="button">Next →</button>
-        </nav>
-      </article>
+
+        <section class="library-home" id="library-home" aria-labelledby="library-title">
+          <div class="library-hero">
+            <p class="eyebrow">THE PRIVATE COLLECTION</p>
+            <h2 id="library-title">Choose a story.</h2>
+            <p>Open any chapter, revisit any passage, and move freely between stories.</p>
+          </div>
+
+          <section class="last-place" id="last-place" aria-labelledby="last-place-label" hidden>
+            <div>
+              <p class="small-label" id="last-place-label">Last opened</p>
+              <h3 id="last-book-title"></h3>
+              <p id="last-chapter-title"></p>
+            </div>
+            <button class="outlined-button" id="resume-button" type="button">Return to chapter →</button>
+          </section>
+
+          <section class="shelves" aria-labelledby="shelves-title">
+            <div class="section-heading">
+              <h3 id="shelves-title">The shelves</h3>
+              <p id="book-count"></p>
+            </div>
+            <div class="book-grid" id="book-grid"></div>
+          </section>
+        </section>
+
+        <section class="book-detail" id="book-detail" aria-labelledby="detail-title" hidden>
+          <button class="back-button" type="button" data-show-library>← Return to the shelves</button>
+          <div class="detail-layout">
+            <div class="detail-cover" id="detail-cover" aria-hidden="true"></div>
+            <div class="detail-copy">
+              <p class="eyebrow">FROM THE PRIVATE COLLECTION</p>
+              <h2 id="detail-title"></h2>
+              <p class="description" id="detail-description"></p>
+              <div class="chapter-list" id="chapter-list" aria-label="Chapters"></div>
+            </div>
+          </div>
+        </section>
+
+        <article class="reader" id="reader" aria-labelledby="chapter-title" hidden>
+          <header class="reader-header">
+            <button class="back-button" id="show-chapters" type="button">← Chapter list</button>
+            <p id="reader-book-title"></p>
+          </header>
+          <p class="chapter-count" id="chapter-count"></p>
+          <h2 id="chapter-title"></h2>
+          <div class="chapter-body" id="chapter-body"></div>
+          <nav class="reader-navigation" aria-label="Chapter navigation">
+            <button class="nav-button" id="previous" type="button">← Previous</button>
+            <button class="nav-button" id="all-chapters" type="button">All chapters</button>
+            <button class="nav-button" id="next" type="button">Next →</button>
+          </nav>
+        </article>
+      </div>
     </main>
 
     <script>
       type Chapter = { title: string; html: string };
-      type Library = { title: string; chapters: Chapter[] };
+      type Book = {
+        id: string;
+        title: string;
+        kind: string;
+        description: string;
+        color: string;
+        symbol: string;
+        chapters: Chapter[];
+      };
+      type Library = { title: string; books: Book[] };
       type Payload = {
         kdf: { iterations: number; salt: string };
         cipher: { iv: string; tagLength: number };
         data: string;
       };
+      type ReadingPlace = { bookId: string; chapterIndex: number };
 
+      const STORAGE_KEY = 'tgilt:last-place';
       const gate = document.querySelector<HTMLElement>('#gate')!;
+      const shell = document.querySelector<HTMLElement>('#library-shell')!;
+      const libraryHome = document.querySelector<HTMLElement>('#library-home')!;
+      const bookDetail = document.querySelector<HTMLElement>('#book-detail')!;
       const reader = document.querySelector<HTMLElement>('#reader')!;
       const form = document.querySelector<HTMLFormElement>('#unlock-form')!;
       const passwordInput = document.querySelector<HTMLInputElement>('#password')!;
       const status = document.querySelector<HTMLElement>('#status')!;
+      const bookGrid = document.querySelector<HTMLElement>('#book-grid')!;
+      const chapterList = document.querySelector<HTMLElement>('#chapter-list')!;
       const chapterTitle = document.querySelector<HTMLElement>('#chapter-title')!;
       const chapterBody = document.querySelector<HTMLElement>('#chapter-body')!;
       const chapterCount = document.querySelector<HTMLElement>('#chapter-count')!;
-      const bookTitle = document.querySelector<HTMLElement>('#book-title')!;
       const previous = document.querySelector<HTMLButtonElement>('#previous')!;
       const next = document.querySelector<HTMLButtonElement>('#next')!;
       let library: Library | null = null;
-      let currentChapter = 0;
+      let currentBookIndex = 0;
+      let currentChapterIndex = 0;
 
       const fromBase64 = (value: string) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+
+      function roman(number: number) {
+        const values: Array<[number, string]> = [[10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+        let result = '';
+        for (const [value, numeral] of values) {
+          while (number >= value) {
+            result += numeral;
+            number -= value;
+          }
+        }
+        return result;
+      }
+
+      function makeCover(book: Book, index: number) {
+        const cover = document.createElement('div');
+        cover.className = 'book-cover';
+        cover.style.setProperty('--cover-color', book.color);
+        cover.innerHTML = `
+          <span class="cover-frame"></span>
+          <span class="cover-content">
+            <span class="cover-series">Private Library · No. ${roman(index + 1)}</span>
+            <span class="cover-symbol"></span>
+            <span class="cover-title"></span>
+            <span class="cover-kind"></span>
+          </span>`;
+        cover.querySelector<HTMLElement>('.cover-symbol')!.textContent = book.symbol;
+        cover.querySelector<HTMLElement>('.cover-title')!.textContent = book.title;
+        cover.querySelector<HTMLElement>('.cover-kind')!.textContent = book.kind;
+        return cover;
+      }
 
       async function decrypt(payload: Payload, password: string): Promise<Library> {
         const material = await crypto.subtle.importKey(
@@ -94,16 +189,114 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         return JSON.parse(new TextDecoder().decode(plaintext));
       }
 
-      function showChapter(index: number) {
+      function readLastPlace(): ReadingPlace | null {
+        try {
+          return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+        } catch {
+          return null;
+        }
+      }
+
+      function findBook(bookId: string) {
+        return library?.books.findIndex((book) => book.id === bookId) ?? -1;
+      }
+
+      function showOnly(section: HTMLElement) {
+        [libraryHome, bookDetail, reader].forEach((candidate) => { candidate.hidden = candidate !== section; });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      function renderLibrary() {
         if (!library) return;
-        currentChapter = index;
-        const chapter = library.chapters[index];
-        chapterCount.textContent = `CHAPTER ${index + 1} OF ${library.chapters.length}`;
+        bookGrid.replaceChildren();
+        document.querySelector('#book-count')!.textContent = `${library.books.length} ${library.books.length === 1 ? 'novel' : 'novels'}`;
+
+        library.books.forEach((book, index) => {
+          const button = document.createElement('button');
+          button.className = 'book-choice';
+          button.type = 'button';
+          button.append(makeCover(book, index));
+          const title = document.createElement('span');
+          title.className = 'book-caption';
+          title.textContent = book.title;
+          const chapters = document.createElement('span');
+          chapters.className = 'book-chapters';
+          chapters.textContent = `${book.chapters.length} ${book.chapters.length === 1 ? 'chapter' : 'chapters'}`;
+          button.append(title, chapters);
+          button.addEventListener('click', () => showBook(index));
+          bookGrid.append(button);
+        });
+
+        const lastPlace = readLastPlace();
+        const lastPlacePanel = document.querySelector<HTMLElement>('#last-place')!;
+        const lastBookIndex = lastPlace ? findBook(lastPlace.bookId) : -1;
+        const lastBook = lastBookIndex >= 0 ? library.books[lastBookIndex] : null;
+        const lastChapter = lastBook && lastPlace ? lastBook.chapters[lastPlace.chapterIndex] : null;
+
+        if (lastBook && lastChapter && lastPlace) {
+          document.querySelector('#last-book-title')!.textContent = lastBook.title;
+          document.querySelector('#last-chapter-title')!.textContent = `Chapter ${lastPlace.chapterIndex + 1} · ${lastChapter.title}`;
+          const resumeButton = document.querySelector<HTMLButtonElement>('#resume-button')!;
+          resumeButton.onclick = () => showChapter(lastBookIndex, lastPlace.chapterIndex);
+          lastPlacePanel.hidden = false;
+        } else {
+          lastPlacePanel.hidden = true;
+        }
+      }
+
+      function showLibrary() {
+        renderLibrary();
+        showOnly(libraryHome);
+      }
+
+      function showBook(index: number) {
+        if (!library) return;
+        currentBookIndex = index;
+        const book = library.books[index];
+        const coverContainer = document.querySelector<HTMLElement>('#detail-cover')!;
+        coverContainer.replaceChildren(makeCover(book, index));
+        document.querySelector('#detail-title')!.textContent = book.title;
+        document.querySelector('#detail-description')!.textContent = book.description;
+        chapterList.replaceChildren();
+
+        const lastPlace = readLastPlace();
+        book.chapters.forEach((chapter, chapterIndex) => {
+          const button = document.createElement('button');
+          button.className = 'chapter-row';
+          button.type = 'button';
+          const number = document.createElement('span');
+          number.className = 'chapter-number';
+          number.textContent = String(chapterIndex + 1).padStart(2, '0');
+          const name = document.createElement('span');
+          name.className = 'chapter-name';
+          name.textContent = chapter.title;
+          button.append(number, name);
+          if (lastPlace?.bookId === book.id && lastPlace.chapterIndex === chapterIndex) {
+            const marker = document.createElement('span');
+            marker.className = 'last-opened-marker';
+            marker.textContent = 'Last opened';
+            button.append(marker);
+          }
+          button.addEventListener('click', () => showChapter(index, chapterIndex));
+          chapterList.append(button);
+        });
+        showOnly(bookDetail);
+      }
+
+      function showChapter(bookIndex: number, chapterIndex: number) {
+        if (!library) return;
+        currentBookIndex = bookIndex;
+        currentChapterIndex = chapterIndex;
+        const book = library.books[bookIndex];
+        const chapter = book.chapters[chapterIndex];
+        document.querySelector('#reader-book-title')!.textContent = book.title;
+        chapterCount.textContent = `CHAPTER ${chapterIndex + 1} OF ${book.chapters.length}`;
         chapterTitle.textContent = chapter.title;
         chapterBody.innerHTML = chapter.html;
-        previous.disabled = index === 0;
-        next.disabled = index === library.chapters.length - 1;
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        previous.disabled = chapterIndex === 0;
+        next.disabled = chapterIndex === book.chapters.length - 1;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ bookId: book.id, chapterIndex }));
+        showOnly(reader);
       }
 
       form.addEventListener('submit', async (event) => {
@@ -115,10 +308,9 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
           if (!response.ok) throw new Error('Library data is unavailable.');
           library = await decrypt(await response.json(), passwordInput.value);
           passwordInput.value = '';
-          bookTitle.textContent = library.title;
           gate.hidden = true;
-          reader.hidden = false;
-          showChapter(0);
+          shell.hidden = false;
+          showLibrary();
         } catch {
           status.textContent = 'That key does not open this door.';
           passwordInput.select();
@@ -127,12 +319,17 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         }
       });
 
-      previous.addEventListener('click', () => showChapter(currentChapter - 1));
-      next.addEventListener('click', () => showChapter(currentChapter + 1));
+      document.querySelectorAll('[data-show-library]').forEach((button) => button.addEventListener('click', showLibrary));
+      document.querySelector('#show-chapters')!.addEventListener('click', () => showBook(currentBookIndex));
+      document.querySelector('#all-chapters')!.addEventListener('click', () => showBook(currentBookIndex));
+      previous.addEventListener('click', () => showChapter(currentBookIndex, currentChapterIndex - 1));
+      next.addEventListener('click', () => showChapter(currentBookIndex, currentChapterIndex + 1));
       document.querySelector('#lock-button')!.addEventListener('click', () => {
         library = null;
+        bookGrid.replaceChildren();
+        chapterList.replaceChildren();
         chapterBody.replaceChildren();
-        reader.hidden = true;
+        shell.hidden = true;
         gate.hidden = false;
         status.textContent = '';
         passwordInput.focus();
@@ -140,4 +337,3 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
     </script>
   </body>
 </html>
-
