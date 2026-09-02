@@ -16,9 +16,24 @@ npm run dev
 
 Open the local address shown in the terminal. The password is never written into the website source. When running `npm run encrypt` without the environment variable, the script asks for the password without displaying it.
 
-## Add chapters
+## Add books and chapters
 
-Put Markdown files in `private-content/`, using names such as `chapter-01.md`, `chapter-02.md`, and so on. This entire directory is ignored by Git. Re-run `npm run encrypt` whenever the manuscript changes, then commit only the new encrypted file in `public/encrypted/library.json`.
+Give every novel its own folder inside `private-content/`. Each folder contains a private `book.json` and its Markdown chapters:
+
+```text
+private-content/
+  01-the-girl-in-the-library/
+    book.json
+    chapter-01.md
+    chapter-02.md
+  02-another-novel/
+    book.json
+    chapter-01.md
+```
+
+The folder prefix controls shelf order. `book.json` stores the title, description, cover color, and cover symbol. The entire `private-content/` directory is ignored by Git. Re-run `npm run encrypt` whenever a manuscript changes, then commit only the encrypted `public/encrypted/library.json` file.
+
+The reader remembers only the last book and chapter opened in that browser. It does not track completion or reading progress.
 
 ## Important security boundary
 
