@@ -57,20 +57,45 @@ async function readHidden(prompt) {
   });
 }
 
+async function loadBook(directoryName) {
+  const directory = join(sourceDir, directoryName);
+  const metadata = JSON.parse(await readFile(join(directory, 'book.json'), 'utf8'));
+  const chapterFiles = (await readdir(directory))
+    .filter((name) => name.toLowerCase().endsWith('.md'))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  if (!chapterFiles.length) throw new Error(`No Markdown chapters found in ${directory}`);
+
+  const chapters = await Promise.all(
+    chapterFiles.map(async (fileName) => parseChapter(await readFile(join(directory, fileName), 'utf8'), fileName)),
+  );
+
+  return {
+    id: metadata.id || directoryName,
+    title: metadata.title,
+    kind: metadata.kind || 'A private novel',
+    description: metadata.description || '',
+    color: metadata.color || '#243b2b',
+    symbol: metadata.symbol || '✦',
+    chapters,
+  };
+}
+
 const password = process.env.LIBRARY_PASSWORD || await readHidden('Library password (hidden): ');
 if (password.length < 10) throw new Error('Use a password with at least 10 characters.');
 
-const files = (await readdir(sourceDir))
-  .filter((name) => name.toLowerCase().endsWith('.md'))
+const sourceEntries = await readdir(sourceDir, { withFileTypes: true });
+const bookDirectories = sourceEntries
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
   .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-if (!files.length) throw new Error(`No Markdown chapters found in ${sourceDir}`);
+if (!bookDirectories.length) {
+  throw new Error(`No book folders found in ${sourceDir}. Each book needs its own folder and book.json file.`);
+}
 
-const chapters = await Promise.all(
-  files.map(async (fileName) => parseChapter(await readFile(join(sourceDir, fileName), 'utf8'), fileName)),
-);
-
-const plaintext = JSON.stringify({ title: 'The Girl in the Library', chapters });
+const books = await Promise.all(bookDirectories.map(loadBook));
+const plaintext = JSON.stringify({ title: 'The Girl in the Library', books });
 const salt = randomBytes(16);
 const iv = randomBytes(12);
 const key = pbkdf2Sync(password, salt, iterations, 32, 'sha256');
@@ -79,7 +104,7 @@ const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final
 const authTag = cipher.getAuthTag();
 
 const payload = {
-  version: 1,
+  version: 2,
   kdf: { name: 'PBKDF2', hash: 'SHA-256', iterations, salt: salt.toString('base64') },
   cipher: { name: 'AES-GCM', iv: iv.toString('base64'), tagLength: 128 },
   data: Buffer.concat([ciphertext, authTag]).toString('base64'),
@@ -87,5 +112,4 @@ const payload = {
 
 await mkdir(dirname(outputFile), { recursive: true });
 await writeFile(outputFile, `${JSON.stringify(payload)}\n`, 'utf8');
-console.log(`Encrypted ${chapters.length} chapter(s) to public/encrypted/library.json`);
-
+console.log(`Encrypted ${books.length} book(s) and ${books.reduce((total, book) => total + book.chapters.length, 0)} chapter(s).`);
