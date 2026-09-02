@@ -3,7 +3,12 @@ import { join, resolve } from 'node:path';
 
 const root = resolve(new URL('..', import.meta.url).pathname.replace(/^\/(.:)/, '$1'));
 const dist = join(root, 'dist');
-const forbidden = ['This is a test chapter', 'At five minutes to closing'];
+const forbidden = [
+  'This is a test chapter',
+  'At five minutes to closing',
+  'A PAGE TURNED IN AN EMPTY LIBRARY',
+  'The building has opinions',
+];
 
 async function filesUnder(directory) {
   const entries = await readdir(directory);
@@ -21,5 +26,4 @@ for (const file of await filesUnder(dist)) {
   }
 }
 
-console.log('Privacy check passed: test manuscript text is absent from dist/.');
-
+console.log('Privacy check passed: test manuscript and reader comments are absent from dist/.');
