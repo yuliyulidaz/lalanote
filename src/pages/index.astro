@@ -81,13 +81,16 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         <article class="reader" id="reader" aria-labelledby="chapter-title" hidden>
           <div class="reader-floating-controls">
             <button class="back-button floating-back-button" id="show-chapters" type="button">← Chapter list</button>
+            <div class="language-switch" id="language-switch" role="group" aria-label="Reading language" data-mode="english" hidden>
+              <button type="button" id="english-mode" aria-label="English only" aria-pressed="true" title="English only">E</button>
+              <button type="button" id="korean-mode" aria-label="English and Korean" aria-pressed="false" title="English + 한국어">K</button>
+            </div>
           </div>
-          <header class="reader-header">
-            <p id="reader-book-title"></p>
-          </header>
+          <div class="reader-header" aria-hidden="true"></div>
           <p class="chapter-count" id="chapter-count"></p>
           <h2 id="chapter-title"></h2>
-          <div class="chapter-body" id="chapter-body"></div>
+          <p class="chapter-translation-title" id="chapter-translation-title" lang="ko" hidden></p>
+          <div class="chapter-body" id="chapter-body" lang="en"></div>
           <nav class="reader-navigation" aria-label="Chapter navigation">
             <button class="nav-button" id="previous" type="button">← Previous</button>
             <button class="nav-button" id="all-chapters" type="button">All chapters</button>
@@ -136,7 +139,8 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         replies?: Reaction[];
       };
       type ReactionSet = { comments: Reaction[] };
-      type Chapter = { title: string; html: string; reactions?: ReactionSet | null };
+      type Chapter = { title: string; html: string; reactions?: ReactionSet | null; korean?: { title?: string; paragraphs: string[] } };
+      type ReadingMode = 'english' | 'bilingual';
       type Book = {
         id: string;
         title: string;
@@ -169,6 +173,10 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
       const chapterTitle = document.querySelector<HTMLElement>('#chapter-title')!;
       const chapterBody = document.querySelector<HTMLElement>('#chapter-body')!;
       const chapterCount = document.querySelector<HTMLElement>('#chapter-count')!;
+      const languageSwitch = document.querySelector<HTMLElement>('#language-switch')!;
+      const englishMode = document.querySelector<HTMLButtonElement>('#english-mode')!;
+      const koreanMode = document.querySelector<HTMLButtonElement>('#korean-mode')!;
+      const translatedTitle = document.querySelector<HTMLElement>('#chapter-translation-title')!;
       const previous = document.querySelector<HTMLButtonElement>('#previous')!;
       const next = document.querySelector<HTMLButtonElement>('#next')!;
       const readingRoom = document.querySelector<HTMLElement>('#reading-room')!;
@@ -181,6 +189,8 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
       let library: Library | null = null;
       let currentBookIndex = 0;
       let currentChapterIndex = 0;
+      let englishParagraphs: HTMLElement[] = [];
+      let koreanParagraphs: HTMLElement[] = [];
 
       const fromBase64 = (value: string) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
 
@@ -463,16 +473,67 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         showOnly(bookDetail);
       }
 
+      function setReadingMode(mode: ReadingMode, preservePosition = true) {
+        const bilingual = mode === 'bilingual' && !koreanMode.disabled;
+        let anchor: { element: HTMLElement; top: number } | null = null;
+        if (preservePosition && !reader.hidden) {
+          const readingLine = document.querySelector('#show-chapters')!.getBoundingClientRect().bottom + 24;
+          for (let index = 0; index < englishParagraphs.length; index++) {
+            const element = englishParagraphs[index];
+            const rect = element.getBoundingClientRect();
+            const translation = koreanParagraphs[index];
+            const end = translation && !translation.hidden ? translation.getBoundingClientRect().bottom : rect.bottom;
+            if (end > readingLine) {
+              // If reading a translation, return to its English paragraph, below the controls.
+              if (rect.top <= readingLine) anchor = { element, top: rect.bottom <= readingLine ? readingLine : rect.top };
+              break;
+            }
+          }
+        }
+        chapterBody.dataset.readingMode = bilingual ? 'bilingual' : 'english';
+        languageSwitch.dataset.mode = bilingual ? 'bilingual' : 'english';
+        englishMode.setAttribute('aria-pressed', String(!bilingual));
+        koreanMode.setAttribute('aria-pressed', String(bilingual));
+        koreanParagraphs.forEach((paragraph) => { paragraph.hidden = !bilingual; });
+        translatedTitle.hidden = !bilingual || !translatedTitle.textContent;
+        if (anchor) window.scrollBy({ top: anchor.element.getBoundingClientRect().top - anchor.top, behavior: 'auto' });
+      }
+
+      function prepareReadingLanguage(chapter: Chapter) {
+        englishParagraphs = Array.from(chapterBody.querySelectorAll<HTMLElement>('p'));
+        koreanParagraphs = [];
+        const translations = chapter.korean?.paragraphs;
+        const available = Array.isArray(translations) && translations.length === englishParagraphs.length &&
+          translations.length > 0 && translations.every((text) => typeof text === 'string' && text.trim());
+        languageSwitch.hidden = !available;
+        koreanMode.disabled = !available;
+        translatedTitle.textContent = available ? chapter.korean?.title || '' : '';
+        if (available) {
+          englishParagraphs.forEach((paragraph, index) => {
+            paragraph.classList.add('english-paragraph');
+            paragraph.dataset.paragraphIndex = String(index);
+            const translation = document.createElement('p');
+            translation.className = 'chapter-translation';
+            translation.lang = 'ko';
+            translation.hidden = true;
+            translation.textContent = translations![index];
+            paragraph.after(translation);
+            koreanParagraphs.push(translation);
+          });
+        }
+        setReadingMode('english', false);
+      }
+
       function showChapter(bookIndex: number, chapterIndex: number) {
         if (!library) return;
         currentBookIndex = bookIndex;
         currentChapterIndex = chapterIndex;
         const book = library.books[bookIndex];
         const chapter = book.chapters[chapterIndex];
-        document.querySelector('#reader-book-title')!.textContent = book.title;
         chapterCount.textContent = `CHAPTER ${chapterIndex + 1} OF ${book.chapters.length}`;
         chapterTitle.textContent = chapter.title;
         chapterBody.innerHTML = chapter.html;
+        prepareReadingLanguage(chapter);
         previous.disabled = chapterIndex === 0;
         next.disabled = chapterIndex === book.chapters.length - 1;
         renderReactions(book, chapter);
@@ -507,6 +568,8 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
       document.querySelectorAll('[data-show-library]').forEach((button) => button.addEventListener('click', showLibrary));
       document.querySelector('#show-chapters')!.addEventListener('click', () => showBook(currentBookIndex));
       document.querySelector('#all-chapters')!.addEventListener('click', () => showBook(currentBookIndex));
+      englishMode.addEventListener('click', () => setReadingMode('english'));
+      koreanMode.addEventListener('click', () => setReadingMode('bilingual'));
       previous.addEventListener('click', () => showChapter(currentBookIndex, currentChapterIndex - 1));
       next.addEventListener('click', () => showChapter(currentBookIndex, currentChapterIndex + 1));
       roomToggle.addEventListener('click', () => {
@@ -520,6 +583,11 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         bookGrid.replaceChildren();
         chapterList.replaceChildren();
         chapterBody.replaceChildren();
+        englishParagraphs = [];
+        koreanParagraphs = [];
+        translatedTitle.textContent = '';
+        translatedTitle.hidden = true;
+        languageSwitch.hidden = true;
         reactionList.replaceChildren();
         readingRoom.hidden = true;
         shell.hidden = true;

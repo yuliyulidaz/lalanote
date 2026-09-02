@@ -1,0 +1,20 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { resolve, relative, isAbsolute } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { marked } from 'marked';
+import { importBilingualText } from './bilingual-content.mjs';
+
+const [input, chapter] = process.argv.slice(2);
+if (!input || !chapter) throw new Error('Usage: node scripts/import-bilingual.mjs bilingual.txt private-content/book/chapter-NN.md');
+const root = fileURLToPath(new URL('..', import.meta.url));
+const chapterPath = resolve(chapter);
+const withinPrivate = relative(resolve(root, 'private-content'), chapterPath);
+if (withinPrivate.startsWith('..') || isAbsolute(withinPrivate) || !withinPrivate.endsWith('.md')) throw new Error('The chapter must be inside private-content.');
+const markdown = await readFile(chapterPath, 'utf8');
+const frontmatter = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+const title = frontmatter?.[1].match(/^title:\s*(.+)$/m)?.[1].trim().replace(/^['"]|['"]$/g, '');
+if (!title) throw new Error('The English chapter needs a title.');
+const html = marked.parse(markdown.slice(frontmatter[0].length));
+const data = importBilingualText(await readFile(resolve(input), 'utf8'), html, title);
+await writeFile(chapterPath.replace(/\.md$/, '.ko.json'), `${JSON.stringify(data, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+console.log(`Matched and imported ${data.paragraphs.length} Korean paragraphs into ignored private content.`);
