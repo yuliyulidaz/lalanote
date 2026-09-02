@@ -91,12 +91,50 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
             <button class="nav-button" id="all-chapters" type="button">All chapters</button>
             <button class="nav-button" id="next" type="button">Next →</button>
           </nav>
+
+          <section class="reading-room" id="reading-room" aria-labelledby="reading-room-title" hidden>
+            <button class="room-toggle" id="room-toggle" type="button" aria-expanded="false" aria-controls="room-panel">
+              <span class="room-heading">
+                <span class="small-label">THE READING ROOM</span>
+                <strong id="reading-room-title">Reader reactions</strong>
+              </span>
+              <span class="room-toggle-meta">
+                <span id="reaction-count"></span>
+                <span id="room-toggle-label">Open</span>
+              </span>
+            </button>
+            <div class="room-panel" id="room-panel" hidden>
+              <div class="room-toolbar">
+                <p>Top reactions</p>
+                <p>Archived with this chapter</p>
+              </div>
+              <div class="reaction-list" id="reaction-list"></div>
+              <button class="show-all-reactions" id="show-all-reactions" type="button" hidden></button>
+            </div>
+          </section>
         </article>
       </div>
     </main>
 
     <script>
-      type Chapter = { title: string; html: string };
+      type ReaderProfile = {
+        id: string;
+        username: string;
+        symbol: string;
+        color: string;
+        voice?: string;
+      };
+      type Reaction = {
+        id: string;
+        readerId: string;
+        posted: string;
+        likes: number;
+        text: string;
+        translation?: string;
+        replies?: Reaction[];
+      };
+      type ReactionSet = { comments: Reaction[] };
+      type Chapter = { title: string; html: string; reactions?: ReactionSet | null };
       type Book = {
         id: string;
         title: string;
@@ -104,6 +142,7 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         description: string;
         color: string;
         symbol: string;
+        readers?: ReaderProfile[];
         chapters: Chapter[];
       };
       type Library = { title: string; books: Book[] };
@@ -130,6 +169,13 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
       const chapterCount = document.querySelector<HTMLElement>('#chapter-count')!;
       const previous = document.querySelector<HTMLButtonElement>('#previous')!;
       const next = document.querySelector<HTMLButtonElement>('#next')!;
+      const readingRoom = document.querySelector<HTMLElement>('#reading-room')!;
+      const roomToggle = document.querySelector<HTMLButtonElement>('#room-toggle')!;
+      const roomPanel = document.querySelector<HTMLElement>('#room-panel')!;
+      const roomToggleLabel = document.querySelector<HTMLElement>('#room-toggle-label')!;
+      const reactionList = document.querySelector<HTMLElement>('#reaction-list')!;
+      const showAllReactions = document.querySelector<HTMLButtonElement>('#show-all-reactions')!;
+      const initialReactionCount = 5;
       let library: Library | null = null;
       let currentBookIndex = 0;
       let currentChapterIndex = 0;
@@ -199,6 +245,137 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
 
       function findBook(bookId: string) {
         return library?.books.findIndex((book) => book.id === bookId) ?? -1;
+      }
+
+      function formatLikes(likes: number) {
+        if (likes < 1000) return String(likes);
+        const value = likes / 1000;
+        return `${(value >= 10 ? value.toFixed(0) : value.toFixed(1)).replace('.0', '')}k`;
+      }
+
+      function countReactions(comments: Reaction[]): number {
+        return comments.reduce((total, comment) => total + 1 + countReactions(comment.replies || []), 0);
+      }
+
+      function findReader(book: Book, readerId: string): ReaderProfile {
+        return book.readers?.find((readerProfile) => readerProfile.id === readerId) || {
+          id: readerId,
+          username: readerId,
+          symbol: '•',
+          color: '#545955',
+        };
+      }
+
+      function makeReaction(book: Book, reaction: Reaction, isReply = false) {
+        const profile = findReader(book, reaction.readerId);
+        const article = document.createElement('article');
+        article.className = `reaction-card${isReply ? ' reaction-reply' : ''}`;
+
+        const avatar = document.createElement('span');
+        avatar.className = 'reader-avatar';
+        avatar.style.setProperty('--avatar-color', profile.color);
+        avatar.textContent = profile.symbol;
+        avatar.setAttribute('role', 'img');
+        avatar.setAttribute('aria-label', `${profile.username} profile icon`);
+        if (profile.voice) avatar.title = profile.voice;
+
+        const content = document.createElement('div');
+        content.className = 'reaction-content';
+        const header = document.createElement('header');
+        header.className = 'reaction-header';
+        const author = document.createElement('strong');
+        author.textContent = profile.username;
+        const posted = document.createElement('span');
+        posted.textContent = `· ${reaction.posted}`;
+        header.append(author, posted);
+
+        const body = document.createElement('p');
+        body.className = 'reaction-text';
+        body.textContent = reaction.text;
+
+        const actions = document.createElement('div');
+        actions.className = 'reaction-actions';
+        const likes = document.createElement('span');
+        likes.className = 'reaction-likes';
+        likes.textContent = `♡ ${formatLikes(reaction.likes)}`;
+        actions.append(likes);
+
+        let translation: HTMLParagraphElement | null = null;
+        if (reaction.translation) {
+          translation = document.createElement('p');
+          translation.className = 'reaction-translation';
+          translation.textContent = reaction.translation;
+          translation.hidden = true;
+          const translateButton = document.createElement('button');
+          translateButton.className = 'reaction-action';
+          translateButton.type = 'button';
+          translateButton.textContent = 'Translate';
+          translateButton.addEventListener('click', () => {
+            const willShow = translation!.hidden;
+            translation!.hidden = !willShow;
+            translateButton.textContent = willShow ? 'Hide translation' : 'Translate';
+          });
+          actions.append(translateButton);
+        }
+
+        content.append(header, body, actions);
+        if (translation) content.append(translation);
+
+        const replies = reaction.replies || [];
+        if (replies.length) {
+          const replyButton = document.createElement('button');
+          replyButton.className = 'reply-toggle';
+          replyButton.type = 'button';
+          replyButton.textContent = `View ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`;
+          replyButton.setAttribute('aria-expanded', 'false');
+          const replyList = document.createElement('div');
+          replyList.className = 'reply-list';
+          replyList.hidden = true;
+          replies.forEach((reply) => replyList.append(makeReaction(book, reply, true)));
+          replyButton.addEventListener('click', () => {
+            const willShow = replyList.hidden;
+            replyList.hidden = !willShow;
+            replyButton.setAttribute('aria-expanded', String(willShow));
+            replyButton.textContent = willShow
+              ? `Hide ${replies.length === 1 ? 'reply' : 'replies'}`
+              : `View ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`;
+          });
+          content.append(replyButton, replyList);
+        }
+
+        article.append(avatar, content);
+        return article;
+      }
+
+      function renderReactions(book: Book, chapter: Chapter) {
+        const comments = chapter.reactions?.comments || [];
+        reactionList.replaceChildren();
+        roomPanel.hidden = true;
+        roomToggle.setAttribute('aria-expanded', 'false');
+        roomToggleLabel.textContent = 'Open';
+
+        if (!comments.length) {
+          readingRoom.hidden = true;
+          return;
+        }
+
+        document.querySelector('#reaction-count')!.textContent = `${countReactions(comments)} reactions`;
+        comments.forEach((reaction, index) => {
+          const card = makeReaction(book, reaction);
+          if (index >= initialReactionCount) {
+            card.hidden = true;
+            card.dataset.moreReaction = '';
+          }
+          reactionList.append(card);
+        });
+
+        showAllReactions.hidden = comments.length <= initialReactionCount;
+        showAllReactions.textContent = `Show all ${comments.length} top comments`;
+        showAllReactions.onclick = () => {
+          reactionList.querySelectorAll<HTMLElement>('[data-more-reaction]').forEach((card) => { card.hidden = false; });
+          showAllReactions.hidden = true;
+        };
+        readingRoom.hidden = false;
       }
 
       function showOnly(section: HTMLElement) {
@@ -295,6 +472,7 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
         chapterBody.innerHTML = chapter.html;
         previous.disabled = chapterIndex === 0;
         next.disabled = chapterIndex === book.chapters.length - 1;
+        renderReactions(book, chapter);
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ bookId: book.id, chapterIndex }));
         showOnly(reader);
       }
@@ -328,11 +506,19 @@ const libraryUrl = `${import.meta.env.BASE_URL}encrypted/library.json`;
       document.querySelector('#all-chapters')!.addEventListener('click', () => showBook(currentBookIndex));
       previous.addEventListener('click', () => showChapter(currentBookIndex, currentChapterIndex - 1));
       next.addEventListener('click', () => showChapter(currentBookIndex, currentChapterIndex + 1));
+      roomToggle.addEventListener('click', () => {
+        const willOpen = roomPanel.hidden;
+        roomPanel.hidden = !willOpen;
+        roomToggle.setAttribute('aria-expanded', String(willOpen));
+        roomToggleLabel.textContent = willOpen ? 'Close' : 'Open';
+      });
       document.querySelector('#lock-button')!.addEventListener('click', () => {
         library = null;
         bookGrid.replaceChildren();
         chapterList.replaceChildren();
         chapterBody.replaceChildren();
+        reactionList.replaceChildren();
+        readingRoom.hidden = true;
         shell.hidden = true;
         gate.hidden = false;
         status.textContent = '';

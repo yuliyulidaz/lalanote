@@ -24,14 +24,19 @@ Give every novel its own folder inside `private-content/`. Each folder contains 
 private-content/
   01-the-girl-in-the-library/
     book.json
+    readers.json
     chapter-01.md
+    chapter-01.comments.json
     chapter-02.md
+    chapter-02.comments.json
   02-another-novel/
     book.json
     chapter-01.md
 ```
 
-The folder prefix controls shelf order. `book.json` stores the title, description, cover color, and cover symbol. The entire `private-content/` directory is ignored by Git. Re-run `npm run encrypt` whenever a manuscript changes, then commit only the encrypted `public/encrypted/library.json` file.
+The folder prefix controls shelf order. `book.json` stores the title, description, cover color, and cover symbol. `readers.json` defines the novel's recurring fictional reader profiles, including their permanent badge symbol and color. Each optional `chapter-NN.comments.json` file contains that chapter's comments, replies, likes, posting labels, and translations.
+
+The entire `private-content/` directory is ignored by Git. Re-run `npm run encrypt` whenever a manuscript or its reader reactions change, then commit only the encrypted `public/encrypted/library.json` file. The comments are encrypted together with the chapter text.
 
 The reader remembers only the last book and chapter opened in that browser. It does not track completion or reading progress.
 
